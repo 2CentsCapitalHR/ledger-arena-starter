@@ -28,7 +28,7 @@ pip install -r requirements.txt
 python client.py --key ak_your_key_here
 ```
 
-Get your key from **https://hiring-arena.twocc.in** by entering the email your
+Get your key from **https://hiring-arena.twocc.in/ledger** by entering the email your
 invitation was sent to.
 
 That first run will connect, stream, and score somewhere in the low tens. It is

@@ -23,7 +23,7 @@ Any language. Everything below is plain HTTP and JSON.
 
 | | |
 | --- | --- |
-| Portal, and where your API key comes from | **https://hiring-arena.twocc.in** |
+| Portal, and where your API key comes from | **https://hiring-arena.twocc.in/ledger** |
 | Start the assignment | **https://classroom.github.com/a/gEmUZPq9** |
 | What accepting gives you | your own private repository, with the starter kit already in it. Work there and push there: that repo is what we read |
 | Deadline, with a live countdown | on the portal |
