@@ -93,6 +93,11 @@ id: 4213
 data: {"offset":4213,"event_id":"evt_...","type":"order_filled","payload":{...}}
 ```
 
+Every ledger event carries `offset`, `event_id`, `type` and `payload`, and
+nothing else you need. Some also carry `backdated_days`. There is no field that
+tells you an event is a duplicate, that it arrived out of order, or that the
+difficult part of the run is starting: working that out is the assignment.
+
 Three control events are not ledger events:
 
 - `stream_open` — sent the moment you connect, before any ledger event.
@@ -406,8 +411,8 @@ Dr 1100 usd_at_market_rate     Cr 2010 usd_at_customer_rate
 
 ### Corrections
 
-**`reversal`** — `reverses_event_id`. Post the exact inverse of the original's
-legs. Keep both: the audit trail retains the original and its reversal.
+**`reversal`** — `reverses_event_id`, plus a free-text `reason` you can ignore.
+Post the exact inverse of the original's legs. Keep both: the audit trail retains the original and its reversal.
 
 A reversal must also undo the original's effect on your **lot book**, not just on
 the accounts. A reversed buy whose lot you leave in place will balance perfectly
