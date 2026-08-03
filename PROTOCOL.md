@@ -396,12 +396,18 @@ nobody. The net is the customer's money.
 involved**: the customer's holding grows by a new lot of `reinvest_quantity`
 whose cost is the net amount.
 
-**`stock_split`** — `symbol`, `ratio_from`, `ratio_to`. **No legs.** Quantity
-scales by `ratio_to / ratio_from`; the total cost of each lot is unchanged,
-so cost per share moves.
+**`stock_split`** — `customer_id`, `symbol`, `ratio_from`, `ratio_to`.
+**No legs.** Quantity scales by `ratio_to / ratio_from`; the total cost of
+each lot is unchanged, so cost per share moves.
 
-**`symbol_change`** — `old_symbol`, `new_symbol`. **No legs.** Re-key the
-holding.
+**`symbol_change`** — `customer_id`, `old_symbol`, `new_symbol`. **No legs.**
+Re-key the holding.
+
+**Every corporate action here is delivered per customer**: it carries a
+`customer_id` and affects only that customer's holding. The same underlying
+action reaches each affected customer as its own event, so a rename or a
+split for one customer says nothing about anyone else's position in that
+symbol.
 
 ### Foreign currency
 
