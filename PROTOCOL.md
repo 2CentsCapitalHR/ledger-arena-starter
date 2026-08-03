@@ -331,15 +331,41 @@ and keeps consuming beats one that crashes and misses a thousand.
 
 | Component | Weight |
 | --- | --- |
-| Per-event posting correctness | 45 |
-| Checkpoint state correctness | 25 |
+| Per-event posting correctness | 30 |
+| Checkpoint state correctness | 40 |
 | Resilience (idempotency, recovery, coverage) | 15 |
 | Liveness (checkpoints on time, p95 latency) | 10 |
 | Final reconciliation | 5 |
 
-Correctness is 70 of 100. Latency is scored generously: anything under 5 seconds
+Correctness is 75 of 100. Latency is scored generously: anything under 5 seconds
 at p95 is full marks, and it degrades linearly to zero at 2 minutes. This is not
 a speed contest.
+
+**State is worth more than legs, deliberately.** Posting the right legs for an
+event is largely mechanical once you have read section 4. Carrying the right
+state forward for hours, across a replay, a reversal and a split, is the part
+that is hard, and it is what a book of record is for. Within a checkpoint:
+
+| Part of the checkpoint | Share |
+| --- | --- |
+| Position cost basis | 60% |
+| Wallet cash | 15% |
+| Cash hold | 15% |
+| Position quantity | 5% |
+| Trial balance | 5% |
+
+Cost basis dominates because it is the one number here that a balanced,
+plausible, confidently wrong implementation still gets wrong. The trial balance
+is worth little precisely because almost everyone's balances: it shows your
+arithmetic works, not that your accounting does.
+
+Positions are scored per symbol, so one bad holding costs you one holding.
+Reporting a position that should not exist counts against you as well.
+
+**Events are not all worth the same.** About one event in seven correctly
+produces no legs at all. Recognising that is worth something, so it scores, but
+at a quarter of a normal event. Submitting empty legs for everything is not a
+strategy.
 
 ---
 
