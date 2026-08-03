@@ -9,9 +9,20 @@ and most of them still balanced perfectly while being wrong.
 
 ## Start here
 
+**Accept the assignment first:** https://classroom.github.com/a/gEmUZPq9
+
+That creates your own private repository with this kit already in it. Work in
+that repository and push to it. **It is what we read**, so a solution kept
+anywhere else does not reach us.
+
+If you are reading this on the public template rather than in your own repo,
+stop and accept the assignment above.
+
+Then, in your repository:
+
 ```bash
-git clone <your copy of this repo>
-cd ledger-arena-starter
+git clone <your own repository>
+cd <your repository>
 pip install -r requirements.txt
 
 python client.py --key ak_your_key_here

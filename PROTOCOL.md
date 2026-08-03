@@ -24,7 +24,8 @@ Any language. Everything below is plain HTTP and JSON.
 | | |
 | --- | --- |
 | Portal, and where your API key comes from | **https://hiring-arena.twocc.in** |
-| Starter kit, with the transport already written | **github.com/2CentsCapitalHR/ledger-arena-starter** |
+| Start the assignment | **https://classroom.github.com/a/gEmUZPq9** |
+| What accepting gives you | your own private repository, with the starter kit already in it. Work there and push there: that repo is what we read |
 | Deadline, with a live countdown | on the portal |
 | Questions | the Discord invite on the portal. **Ask there, not by DM**: anything clarified becomes canon for everyone |
 
