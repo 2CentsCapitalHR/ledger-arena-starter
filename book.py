@@ -16,6 +16,11 @@ Two things to get right before anything else:
   * Key balances by (customer, account), not by account. At least one event
     moves money between two customers on the same account, and an
     account-level book shows nothing wrong at all.
+  * The firm has its own money. Brokerage and custody are revenue, the
+    executing broker and the custodian cost us, the regulatory fee is
+    collected for the venue, and an introducing partner is paid a share of
+    what is left. Those are scored as one block: your statement of what the
+    firm earned and owes either ties or it does not.
 """
 from __future__ import annotations
 
@@ -131,19 +136,39 @@ class Book:
 
     def on_order_placed(self, p, ev):
         raise NotImplementedError(
-            "No legs. A placement moves no money: it creates a hold, which is "
-            "reported at checkpoints and never posted")
+            "No legs. A placement moves no money: it creates a hold of "
+            "quantity * limit_price + est_charges, reported at checkpoints and "
+            "never posted. Holding the principal alone under-reserves on every "
+            "order")
 
     def on_order_partially_filled(self, p, ev):
         return self.on_order_filled(p, ev)
 
     def on_order_filled(self, p, ev):
         raise NotImplementedError(
-            "buy:  Dr 2010 principal+commission, Dr 1200 principal / "
-            "Cr 2350 principal, Cr 2100 principal, Cr 4000 commission. "
-            "sell: Dr 1150 principal, Dr 2100 FIFO cost / Cr 2010 "
-            "principal-commission-reg, Cr 1200 cost, Cr 4000 commission, "
-            "Cr 2400 reg. Cash does NOT move on the trade date")
+            "The fee amounts are NOT in the payload. Derive them from the "
+            "broker tariff in PROTOCOL.md section 4, each rounded to the cent "
+            "independently. Three things here balance when done wrong: the "
+            "regulatory fee is a payable and not revenue; cost is booked gross "
+            "rather than netted off revenue; and the partner is paid on net "
+            "revenue, with no clawback when a trade loses money. Cash does NOT "
+            "move on the trade date")
+
+    # -- what the firm earns and owes ---------------------------------------
+    def on_broker_fees_settled(self, p, ev):
+        raise NotImplementedError(
+            "Dr 241x / Cr 1100 for the WHOLE outstanding balance on that "
+            "broker's payable for that customer. The amount is not in the "
+            "payload: it is every cent you have accrued since the last one")
+
+    def on_custodian_fees_settled(self, p, ev):
+        raise NotImplementedError("Dr 2420 outstanding / Cr 1100")
+
+    def on_reg_fees_remitted(self, p, ev):
+        raise NotImplementedError("Dr 2400 outstanding / Cr 1100")
+
+    def on_partner_payout(self, p, ev):
+        raise NotImplementedError("Dr 2430 outstanding / Cr 1100")
 
     def on_trade_settled(self, p, ev):
         raise NotImplementedError(
@@ -197,6 +222,10 @@ class Book:
                 c["wallet_cash"] += -bal          # a liability, so credit-positive
 
         return {
+            # Every order you believe is still open, mapped to the broker the
+            # routing rule sends it to. Fills name the broker, so open orders
+            # are the only place the decision is actually yours.
+            "open_order_routes": {},
             "trial_balance": {a: str(money(v)) for a, v in sorted(tb.items())},
             "customers": {cid: {"wallet_cash": str(money(c["wallet_cash"])),
                                 "cash_hold": str(money(c["cash_hold"])),

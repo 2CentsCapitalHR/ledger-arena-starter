@@ -35,14 +35,28 @@ Any language. Everything below is plain HTTP and JSON.
 | `2300` | Withdrawals In Transit | Liability |
 | `2350` | Unsettled Trade Payable | Liability |
 | `2400` | Regulatory Fees Payable | Liability |
-| `4000` | Commission Revenue | Income |
+| `2411` | Broker Fees Payable - BRK-A | Liability |
+| `2412` | Broker Fees Payable - BRK-B | Liability |
+| `2413` | Broker Fees Payable - BRK-C | Liability |
+| `2420` | Custodian Fees Payable | Liability |
+| `2430` | Partner Share Payable | Liability |
+| `4000` | Brokerage Revenue | Income |
+| `4010` | Custody Revenue | Income |
 | `4100` | FX Spread Revenue | Income |
 | `4200` | Interest Income | Income |
+| `5000` | Brokerage Cost | Expense |
+| `5010` | Custody Cost | Expense |
+| `5100` | Partner Revenue Share | Expense |
 
-**The firm has money of its own.** Commission and FX spread are the firm's
-income, not any customer's. Regulatory fees are owed onward to the venue. So
-the sum of customer wallets does **not** equal omnibus cash, and any check you
-write assuming it does will be wrong on a correct book.
+**The firm has money of its own, and it spends money too.** Brokerage and
+custody charges are the firm's income; the regulatory fee is collected on the
+venue's behalf and owed onward; the executing broker, the custodian and the
+introducing partner all have to be paid. So the sum of customer wallets does
+**not** equal omnibus cash, and any check you write assuming it does will be
+wrong on a correct book.
+
+Revenue and cost are booked **gross**. A book that posts only the margin
+balances perfectly and can never tell you what you earned or what it cost.
 
 Every leg carries a `customer_id`. Assets increase on the debit side,
 liabilities on the credit side. Debits must equal credits on every transaction.
@@ -116,9 +130,14 @@ with your full state.
       "cash_hold": "320.00",
       "positions": {"ACME": {"quantity": "8", "cost_basis": "960.00"}}
     }
-  }
+  },
+  "open_order_routes": {"ord_9f2c11a04b3e": "BRK-B"}
 }
 ```
+
+`open_order_routes` maps every order you believe is still open to the broker the
+routing rule sends it to. Orders you have seen filled or cancelled do not belong
+here.
 
 Trial balance values are **debit-positive**: an asset balance is positive, a
 liability balance is negative.
@@ -190,48 +209,139 @@ Dr 2010 amount  (from_customer_id)
 
 ### Orders
 
+#### Routing
+
+Every symbol belongs to one **asset class** for the whole run: `equity`, `etf`
+or `bond`. No broker covers all three, and none is cheapest everywhere.
+
+| Broker | Trades | Brokerage | Custody | Broker cost | Custody cost | Min fee | Ticket |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `BRK-A` | equity, etf | 20 bps | 4 bps | 9 bps | 2 bps | 1.00 | 0.35 |
+| `BRK-B` | equity, bond | 15 bps | 5 bps | 8 bps | 3 bps | 2.50 | 3.00 |
+| `BRK-C` | etf, bond | 25 bps | 3 bps | 12 bps | 1 bps | 0.50 | 0.20 |
+
+Brokerage and custody are what the **customer** is charged. Broker cost and
+custody cost are what **we** are charged for the same trade. All are per unit of
+principal, each rounded to the cent independently.
+
+**The brokerage charge is floored at the broker's minimum fee**, and every fill
+also costs us the broker's flat **ticket** fee whatever its size. Those two
+floors pull in opposite directions: the minimum fee is revenue and the ticket is
+cost, so the cheapest venue for a large order is not the cheapest for a small
+one, and a small enough order loses us money however it is routed.
+
+**Routing rule.** Route to the broker with the lowest total customer charge
+(brokerage + custody) for `quantity × limit_price`, among brokers that trade
+that asset class. Ties break on broker id ascending, so there is always exactly
+one right answer.
+
+You report the route of every **still-open** order at each checkpoint. Fills
+name the broker that took the order, so open orders are the only place where the
+routing decision is actually yours.
+
+#### Placement
+
 **`order_placed`** — `order_id`, `customer_id`, `side`, `symbol`, `quantity`,
-`limit_price`, `est_commission`.
+`limit_price`, `asset_class`, `est_charges`.
 
 **No legs.** A placement moves no money. It creates a *hold*: for a buy, cash of
-`quantity × limit_price + est_commission` is no longer spendable; for a sell, the
-shares are no longer sellable. Holds are reported at checkpoints, never posted.
+`quantity × limit_price + est_charges` is no longer spendable; for a sell, the
+shares are no longer sellable. `est_charges` covers brokerage, custody and the
+regulatory fee, so holding principal alone under-reserves on every order. Holds
+are reported at checkpoints, never posted.
+
+#### Fills
 
 **`order_partially_filled`** and **`order_filled`** — `order_id`, `customer_id`,
-`side`, `symbol`, `quantity`, `price`, `principal`, `commission`. An order may
-fill many times. `order_filled` is the last fill and closes the order, releasing
-any unfilled remainder of the hold.
+`side`, `symbol`, `quantity`, `price`, `principal`, `asset_class`, `broker`,
+`partner_rate`, `trade_id`. An order may fill many times. `order_filled` is the
+last fill and closes the order, releasing any unfilled remainder of the hold.
 
-Commission is the **firm's income**. It is not part of the cost basis, and it
-does not leave the broker account: it is ours.
+**The fee amounts are not in the payload.** You are given the broker and the
+principal; the tariff above turns those into money. Per fill:
+
+```
+brokerage     = max(min_fee, principal x brokerage_bps)
+custody       = principal x custody_bps
+reg           = principal x 0.0008
+broker_cost   = principal x broker_cost_bps + ticket
+custody_cost  = principal x custody_cost_bps
+
+net_revenue   = (brokerage + custody) - (broker_cost + custody_cost)
+partner_share = net_revenue x partner_rate, or zero if net_revenue <= 0
+```
+
+Each is rounded to the cent **independently**, half away from zero.
+`partner_rate` may be `0.50`, so a net revenue with an odd number of cents lands
+exactly on a half cent. Banker's rounding and binary floating point each give a
+different answer there than the rule above does.
+
+Three things here balance perfectly when done wrong:
+
+- **The regulatory fee is not revenue.** It is collected on the venue's behalf
+  and owed onward. Crediting it to `4000` overstates income.
+- **Cost is booked gross**, never netted against revenue.
+- **The partner is paid on what we keep, not on what we charge.** Where cost
+  exceeds revenue the share is zero: there is no clawback. That is not a corner
+  case here. The ticket fee makes roughly a quarter of all fills loss-making,
+  and the routing rule optimises the customer's charge, not our margin.
 
 **Cash does not move on the trade date.** Trades settle two days later, so a
 fill creates an obligation and a separate `trade_settled` event discharges it.
 A book that touches `1100` here will disagree with the broker for exactly as
 long as anything remains unsettled.
 
-Buy, carrying `trade_id`:
+Buy. `241x` means the payable belonging to the broker that executed it:
 ```
-Dr 2010 principal + commission     Cr 2350 principal
-Dr 1200 principal                  Cr 2100 principal
-                                   Cr 4000 commission
+Dr 2010 principal + brokerage      Cr 2350 principal
+        + custody + reg            Cr 2100 principal
+Dr 1200 principal                  Cr 4000 brokerage
+Dr 5000 broker_cost                Cr 4010 custody
+Dr 5010 custody_cost               Cr 2400 reg
+Dr 5100 partner_share              Cr 241x broker_cost
+                                   Cr 2420 custody_cost
+                                   Cr 2430 partner_share
 ```
 
-Sell, where `cost` is the **first-in-first-out cost of the shares sold** and
-`reg` is a regulatory fee of `principal x 0.0008` rounded to the cent, levied on
-the seller and owed onward to the venue:
+Sell, where `cost` is the **first-in-first-out cost of the shares sold**:
 ```
-Dr 1150 principal                  Cr 2010 principal - commission - reg
-Dr 2100 cost                       Cr 1200 cost
-                                   Cr 4000 commission
+Dr 1150 principal                  Cr 2010 principal - brokerage
+Dr 2100 cost                               - custody - reg
+Dr 5000 broker_cost                Cr 1200 cost
+Dr 5010 custody_cost               Cr 4000 brokerage
+Dr 5100 partner_share              Cr 4010 custody
                                    Cr 2400 reg
+                                   Cr 241x broker_cost
+                                   Cr 2420 custody_cost
+                                   Cr 2430 partner_share
 ```
+
+**FIFO cost, to the cent.** A lot carries a quantity and a **total cost**. When
+a sell consumes part of a lot, the cost relieved is
+`round(lot_total x sold_qty / lot_qty)` and the remainder stays with the lot.
+Keeping a cost *per share* and multiplying it out is also FIFO, and it will
+disagree with this by a cent, so this is the convention we grade against.
 
 **`trade_settled`** with `trade_id` discharges the obligation from that fill:
 ```
 buy    Dr 2350 principal     Cr 1100 principal
 sell   Dr 1100 principal     Cr 1150 principal
 ```
+
+#### Paying it all onward
+
+Four payables accrue a few cents per trade and are discharged in full, one
+customer at a time. **The amount is never in the payload**: it is whatever has
+accumulated on that account for that customer, so each of these audits every
+per-trade rounding you have done since the last one. Settling an account with
+nothing outstanding is an error.
+
+| Event | Payload | Posting |
+| --- | --- | --- |
+| `broker_fees_settled` | `customer_id`, `broker` | Dr 241x outstanding, Cr 1100 |
+| `custodian_fees_settled` | `customer_id` | Dr 2420 outstanding, Cr 1100 |
+| `reg_fees_remitted` | `customer_id` | Dr 2400 outstanding, Cr 1100 |
+| `partner_payout` | `customer_id` | Dr 2430 outstanding, Cr 1100 |
 
 Realised profit and loss is `(principal - commission - reg) - cost`. Never post
 it directly; it is the residual.
@@ -348,16 +458,25 @@ that is hard, and it is what a book of record is for. Within a checkpoint:
 
 | Part of the checkpoint | Share |
 | --- | --- |
-| Position cost basis | 60% |
-| Wallet cash | 15% |
-| Cash hold | 15% |
-| Position quantity | 5% |
-| Trial balance | 5% |
+| Position cost basis | 64% |
+| Firm accounts | 11% |
+| Wallet cash | 9% |
+| Order routing | 8% |
+| Cash hold | 5% |
+| Position quantity | 2% |
+| Trial balance | 1% |
 
 Cost basis dominates because it is the one number here that a balanced,
 plausible, confidently wrong implementation still gets wrong. The trial balance
 is worth little precisely because almost everyone's balances: it shows your
 arithmetic works, not that your accounting does.
+
+**Firm accounts are scored all or nothing.** The revenue, cost and payable
+accounts (`2400`, `241x`, `2420`, `2430`, `4xxx`, `5xxx`) are graded as one
+block: either your statement of what the firm earned and owes is right, or it
+is not. Misclassifying a fee is wrong on every fill rather than on some of
+them, and scoring it as a fraction of thirteen accounts would turn being wrong
+about your own revenue into a rounding error.
 
 Positions are scored per symbol, so one bad holding costs you one holding.
 Reporting a position that should not exist counts against you as well.
