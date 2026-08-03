@@ -1,16 +1,21 @@
 # Ledger Arena: protocol specification
 
-> This copy is a snapshot taken when the kit was published. The canonical
-> version is served at **https://hiring-arena.twocc.in/protocol**, and if the
-> two ever disagree, that one wins. Any clarification made in Discord is folded
-> into it.
-
 You are building a server that keeps a double-entry book of record. We stream you
 a broker's event feed; you post the events into your book and send us back the
 journal legs each one produced. We score correctness continuously.
 
 **Your server competes, not you.** The stream is resumable, so a crash at 3am
 costs you very little. There is nothing to stay awake for.
+
+> **Clarifications, 2026-08-03** (also announced in Discord; none change scoring):
+> 1. Resubmitting an event you already answered now returns
+>    `"duplicate": true` instead of re-grading what you sent. Your first
+>    submission was always the one scored; the old response was misleading.
+> 2. Quantities are now always plain decimal strings. Earlier streams could
+>    serialize 10 as `"1E+1"`; if you handled that, your handling still works.
+> 3. The mode table in section 7 now matches `/v1/rules`: `final` is 6,000
+>    events over ~75 minutes. The table previously said 3 h / 12,000, which
+>    was never what the server ran.
 
 ---
 
@@ -177,66 +182,66 @@ The scoring weights, live. They are not a secret.
 
 ---
 
-## 4. Posting rules
+## 4. The economics, which your postings must express
+
+This section states what happens commercially. **It does not tell you which
+accounts move.** Deriving the journal entries from the economics and the chart
+of accounts in section 2 is the assignment; the two worked examples below
+anchor the format, and practice mode will tell you whether you are right and
+which accounts you disagree on, without telling you the answer.
+
+Two conventions apply everywhere and are graded exactly as stated:
+
+- Every amount is rounded to the cent **independently, half away from zero**.
+- Debits equal credits on every transaction, and every leg carries the
+  `customer_id` it concerns.
 
 ### Cash
 
-**`deposit`** — `amount`
+**`deposit`** — `customer_id`, `amount`. Cash arrives at the broker; the firm
+owes the customer that much more. This one is worked for you:
+
 ```
 Dr 1100 amount        Cr 2010 amount
 ```
 
-**`fee_charged`** — `amount`
-```
-Dr 2010 amount        Cr 1100 amount
-```
+**`fee_charged`** — `customer_id`, `amount`. The customer pays the firm's fee
+out of their wallet; the cash leaves the omnibus account.
 
-**`withdrawal_requested`** — `withdrawal_id`, `amount`. The money has left the
-customer's wallet but not yet the broker.
-```
-Dr 2010 amount        Cr 2300 amount
-```
+**`fee_refund`** — `refunds_source_id`, `customer_id`. Undoes a fee charged
+earlier, in full. **The amount is not in this payload**: it is the amount of
+the `fee_charged` event being refunded. Refunding the same fee twice is an
+error.
 
-**`withdrawal_settled`** — `withdrawal_id`. Look up the amount from the request.
-```
-Dr 2300 amount        Cr 1100 amount
-```
+**`withdrawal_requested`** — `withdrawal_id`, `customer_id`, `amount`. The
+money has left the customer's wallet but has **not yet left the broker**. It
+is no longer owed to the customer as wallet money; it is owed to them as a
+withdrawal being processed. Those are different obligations.
 
-**`withdrawal_rejected`** — `withdrawal_id`. Returns it to the wallet.
-```
-Dr 2300 amount        Cr 2010 amount
-```
+**`withdrawal_settled`** — `withdrawal_id`. The cash actually leaves. Look the
+amount up from the request.
 
-**`fee_refund`** — `refunds_source_id`, `customer_id`. Refunds a fee charged
-earlier. **The amount is not in this payload**: look it up from the
-`fee_charged` event being refunded. Refunding the same fee twice is an error.
-```
-Dr 1100 amount        Cr 2010 amount
-```
+**`withdrawal_rejected`** — `withdrawal_id`. The withdrawal fails and the
+money is owed to the customer as wallet money again. No cash moved at any
+point.
 
-**`interest_credited`** — `gross_amount`, `customer_share`. Interest earned on
-the omnibus balance and shared with the customer. The firm keeps the remainder,
-so this is not a pass-through.
-```
-Dr 1100 gross         Cr 2010 customer_share
-                      Cr 4200 gross - customer_share
-```
+**`interest_credited`** — `customer_id`, `gross_amount`, `customer_share`.
+The broker pays interest on the omnibus balance. The customer is credited
+their share; **the firm keeps the remainder as income**. This is not a
+pass-through.
 
 **`transfer_between_customers`** — `from_customer_id`, `to_customer_id`,
-`amount`. No external cash moves. Both legs land on `2010`, so **the account
-nets to zero**: a book that tracks balances per account rather than per
-(customer, account) will show nothing wrong at all.
-```
-Dr 2010 amount  (from_customer_id)
-                      Cr 2010 amount  (to_customer_id)
-```
+`amount`. One customer pays another. No external cash moves, and the firm's
+total obligation is unchanged: only *whose* money it is changes. A book that
+tracks balances per account rather than per (customer, account) will show
+nothing happening at all, and will be wrong at every checkpoint afterwards.
 
 ### Orders
 
-#### Routing
+#### The tariff
 
-Every symbol belongs to one **asset class** for the whole run: `equity`, `etf`
-or `bond`. No broker covers all three, and none is cheapest everywhere.
+Every symbol belongs to one asset class for the whole run: `equity`, `etf` or
+`bond`. No broker covers all three, and none is cheapest everywhere.
 
 | Broker | Trades | Brokerage | Custody | Broker cost | Custody cost | Min fee | Ticket |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -244,179 +249,166 @@ or `bond`. No broker covers all three, and none is cheapest everywhere.
 | `BRK-B` | equity, bond | 15 bps | 5 bps | 8 bps | 3 bps | 2.50 | 3.00 |
 | `BRK-C` | etf, bond | 25 bps | 3 bps | 12 bps | 1 bps | 0.50 | 0.20 |
 
-Brokerage and custody are what the **customer** is charged. Broker cost and
-custody cost are what **we** are charged for the same trade. All are per unit of
-principal, each rounded to the cent independently.
+Brokerage and custody are what the **customer** is charged; both are the
+firm's revenue. Broker cost and custody cost are what the **firm** is charged
+by the executing broker and the custodian for the same trade. All are per
+unit of principal. **The brokerage charge is floored at the broker's minimum
+fee**, and every fill also costs the firm the broker's flat **ticket** fee
+whatever its size.
 
-**The brokerage charge is floored at the broker's minimum fee**, and every fill
-also costs us the broker's flat **ticket** fee whatever its size. Those two
-floors pull in opposite directions: the minimum fee is revenue and the ticket is
-cost, so the cheapest venue for a large order is not the cheapest for a small
-one, and a small enough order loses us money however it is routed.
+On top of the tariff, every fill incurs a **regulatory fee of 8 bps of
+principal, charged to the customer**. The firm collects it **on the venue's
+behalf and owes it onward**: it is not the firm's income, and the firm does
+not add to it.
 
-**Routing rule.** Route to the broker with the lowest total customer charge
-(brokerage + custody) for `quantity × limit_price`, among brokers that trade
-that asset class. Ties break on broker id ascending, so there is always exactly
-one right answer.
+Finally, an introducing **partner is paid a share of what the firm keeps** on
+each fill: `partner_rate × (revenue - cost)`, where revenue is what the
+customer was charged for brokerage and custody and cost is what the broker
+and custodian charged the firm. **Where cost exceeds revenue the share is
+zero; there is no clawback.** That is not a corner case: the ticket fee makes
+roughly a quarter of all fills loss-making. `partner_rate` may be `0.50`, so
+an odd number of cents lands exactly on a half cent; the rounding convention
+above decides it, and binary floating point will decide it differently.
 
-You report the route of every **still-open** order at each checkpoint. Fills
-name the broker that took the order, so open orders are the only place where the
-routing decision is actually yours.
+Each derived amount (brokerage, custody, regulatory fee, broker cost, custody
+cost, partner share) is rounded to the cent independently before use.
+
+#### Routing
+
+**Route to the broker with the lowest total customer charge** (brokerage +
+custody) for `quantity × limit_price`, among brokers that trade that asset
+class. Ties break on broker id ascending, so there is always exactly one
+right answer. You report the route of every still-open order at each
+checkpoint; fills name the broker that took them, so open orders are the only
+place the routing decision is yours.
 
 #### Placement
 
 **`order_placed`** — `order_id`, `customer_id`, `side`, `symbol`, `quantity`,
 `limit_price`, `asset_class`, `est_charges`.
 
-**No legs.** A placement moves no money. It creates a *hold*: for a buy, cash of
-`quantity × limit_price + est_charges` is no longer spendable; for a sell, the
-shares are no longer sellable. `est_charges` covers brokerage, custody and the
-regulatory fee, so holding principal alone under-reserves on every order. Holds
-are reported at checkpoints, never posted.
+**No money moves and no legs are posted.** A placement creates a *hold*: for
+a buy, cash of `quantity × limit_price + est_charges` is no longer spendable;
+for a sell, the shares are no longer sellable. Holds are reported at
+checkpoints, never posted. `est_charges` is a conservative estimate supplied
+in the feed; use it as given.
 
 #### Fills
 
-**`order_partially_filled`** and **`order_filled`** — `order_id`, `customer_id`,
-`side`, `symbol`, `quantity`, `price`, `principal`, `asset_class`, `broker`,
-`partner_rate`, `trade_id`. An order may fill many times. `order_filled` is the
-last fill and closes the order, releasing any unfilled remainder of the hold.
+**`order_partially_filled`** and **`order_filled`** — `order_id`,
+`customer_id`, `side`, `symbol`, `quantity`, `price`, `principal`,
+`asset_class`, `broker`, `partner_rate`, `trade_id`. An order may fill many
+times; `order_filled` is the last fill, closes the order, and releases
+whatever remains of the hold.
 
 **The fee amounts are not in the payload.** You are given the broker and the
-principal; the tariff above turns those into money. Per fill:
+principal; the tariff turns those into money.
+
+What happens on a **buy**: the customer pays, from their wallet, the
+principal plus every charge (brokerage, custody, regulatory fee). The firm
+now holds the shares for the customer in omnibus custody, and the customer
+has a claim on them. **Cash does not move on the trade date**: the firm owes
+the broker the principal until settlement, two days later. The firm's
+revenue, its costs, the regulatory fee it collected, and the partner's share
+all accrue now, each as what it is. Revenue and cost are booked **gross**;
+nothing is netted.
+
+The worked example, for a buy of principal P at a broker whose payable
+account is `241x`, with charges b (brokerage), c (custody), r (regulatory),
+and costs bc (broker cost), cc (custody cost), ps (partner share):
 
 ```
-brokerage     = max(min_fee, principal x brokerage_bps)
-custody       = principal x custody_bps
-reg           = principal x 0.0008
-broker_cost   = principal x broker_cost_bps + ticket
-custody_cost  = principal x custody_cost_bps
-
-net_revenue   = (brokerage + custody) - (broker_cost + custody_cost)
-partner_share = net_revenue x partner_rate, or zero if net_revenue <= 0
+Dr 2010  P + b + c + r          Cr 2350  P
+Dr 1200  P                      Cr 2100  P
+Dr 5000  bc                     Cr 4000  b
+Dr 5010  cc                     Cr 4010  c
+Dr 5100  ps                     Cr 2400  r
+                                Cr 241x  bc
+                                Cr 2420  cc
+                                Cr 2430  ps
 ```
 
-Each is rounded to the cent **independently**, half away from zero.
-`partner_rate` may be `0.50`, so a net revenue with an odd number of cents lands
-exactly on a half cent. Banker's rounding and binary floating point each give a
-different answer there than the rule above does.
+Study why each of those lines is what it is. Every other posting in this
+assignment is derived by the same reasoning, and **no other posting is given
+to you**.
 
-Three things here balance perfectly when done wrong:
+What happens on a **sell**: the customer's shares are delivered and the sale
+proceeds are owed to the firm by the broker until settlement. The customer is
+credited the principal **net of** their charges. The custody position and the
+customer's claim on it shrink by the **cost** of the shares sold, not their
+sale value; the difference is the customer's realised gain or loss, and it is
+the *residual* of the legs, never posted directly. The firm's revenue, cost,
+regulatory and partner economics are identical to a buy.
 
-- **The regulatory fee is not revenue.** It is collected on the venue's behalf
-  and owed onward. Crediting it to `4000` overstates income.
-- **Cost is booked gross**, never netted against revenue.
-- **The partner is paid on what we keep, not on what we charge.** Where cost
-  exceeds revenue the share is zero: there is no clawback. That is not a corner
-  case here. The ticket fee makes roughly a quarter of all fills loss-making,
-  and the routing rule optimises the customer's charge, not our margin.
+**FIFO cost, to the cent, in delivery order.** A lot carries a quantity and a
+**total cost**. When a sell consumes part of a lot, the cost relieved is
+`round(lot_total × sold_qty / lot_qty)` and the remainder stays with the lot.
+Keeping a cost per share and multiplying it out is also FIFO, and it will
+disagree with this by a cent, so this formula is the convention graded.
 
-**Cash does not move on the trade date.** Trades settle two days later, so a
-fill creates an obligation and a separate `trade_settled` event discharges it.
-A book that touches `1100` here will disagree with the broker for exactly as
-long as anything remains unsettled.
+**`trade_settled`** — `trade_id`. Settlement day: the cash from that fill
+actually moves, discharging the obligation the fill created. Nothing else
+about the trade changes.
 
-Buy. `241x` means the payable belonging to the broker that executed it:
-```
-Dr 2010 principal + brokerage      Cr 2350 principal
-        + custody + reg            Cr 2100 principal
-Dr 1200 principal                  Cr 4000 brokerage
-Dr 5000 broker_cost                Cr 4010 custody
-Dr 5010 custody_cost               Cr 2400 reg
-Dr 5100 partner_share              Cr 241x broker_cost
-                                   Cr 2420 custody_cost
-                                   Cr 2430 partner_share
-```
-
-Sell, where `cost` is the **first-in-first-out cost of the shares sold**:
-```
-Dr 1150 principal                  Cr 2010 principal - brokerage
-Dr 2100 cost                               - custody - reg
-Dr 5000 broker_cost                Cr 1200 cost
-Dr 5010 custody_cost               Cr 4000 brokerage
-Dr 5100 partner_share              Cr 4010 custody
-                                   Cr 2400 reg
-                                   Cr 241x broker_cost
-                                   Cr 2420 custody_cost
-                                   Cr 2430 partner_share
-```
-
-**FIFO cost, to the cent.** A lot carries a quantity and a **total cost**. When
-a sell consumes part of a lot, the cost relieved is
-`round(lot_total x sold_qty / lot_qty)` and the remainder stays with the lot.
-Keeping a cost *per share* and multiplying it out is also FIFO, and it will
-disagree with this by a cent, so this is the convention we grade against.
-
-**`trade_settled`** with `trade_id` discharges the obligation from that fill:
-```
-buy    Dr 2350 principal     Cr 1100 principal
-sell   Dr 1100 principal     Cr 1150 principal
-```
+**`order_cancelled`**, **`order_rejected`** — `order_id`. **No legs.** The
+remaining hold is released.
 
 #### Paying it all onward
 
-Four payables accrue a few cents per trade and are discharged in full, one
-customer at a time. **The amount is never in the payload**: it is whatever has
-accumulated on that account for that customer, so each of these audits every
-per-trade rounding you have done since the last one. Settling an account with
-nothing outstanding is an error.
+Four payables accrue a few cents per trade and are discharged **in full, one
+customer at a time**, paid out of omnibus cash. **The amount is never in the
+payload**: it is whatever has accumulated on that account for that customer,
+so each of these audits every per-trade rounding you have done since the last
+one. Settling an account with nothing outstanding is an error.
 
-| Event | Payload | Posting |
+| Event | Payload | What is paid |
 | --- | --- | --- |
-| `broker_fees_settled` | `customer_id`, `broker` | Dr 241x outstanding, Cr 1100 |
-| `custodian_fees_settled` | `customer_id` | Dr 2420 outstanding, Cr 1100 |
-| `reg_fees_remitted` | `customer_id` | Dr 2400 outstanding, Cr 1100 |
-| `partner_payout` | `customer_id` | Dr 2430 outstanding, Cr 1100 |
-
-Realised profit and loss on a sell is
-`(principal - brokerage - custody - reg) - cost`. **Never post it directly**: it
-is the residual of the legs above, and a book that posts it as well double
-counts every gain.
-
-**`order_cancelled`**, **`order_rejected`** — `order_id`. **No legs.** Release
-the remaining hold.
+| `broker_fees_settled` | `customer_id`, `broker` | that broker's accumulated fees for that customer |
+| `custodian_fees_settled` | `customer_id` | the custodian's accumulated fees |
+| `reg_fees_remitted` | `customer_id` | the regulatory fees collected |
+| `partner_payout` | `customer_id` | the partner's accumulated share |
 
 ### Corporate actions
 
-**`dividend_cash`** — `gross_amount`, `withholding_tax`, `net_amount`. Tax is
-withheld at source, so only the net ever reaches us and we owe the tax to nobody.
-**Do not raise a tax payable.**
-```
-Dr 1100 net           Cr 2010 net
-```
+**`dividend_cash`** — `customer_id`, `symbol`, `gross_amount`,
+`withholding_tax`, `net_amount`. A dividend arrives. Tax was withheld **at
+source**: only the net ever reaches the firm, and the firm owes the tax to
+nobody. The net is the customer's money.
 
-**`dividend_reinvested`** — as above plus `reinvest_price`, `reinvest_quantity`.
-The broker reinvests the net. **Cash is not involved at all.**
-```
-Dr 1200 net           Cr 2100 net       and add a lot of reinvest_quantity at cost net
-```
+**`dividend_reinvested`** — as above plus `reinvest_price`,
+`reinvest_quantity`. The broker reinvests the net directly. **Cash is never
+involved**: the customer's holding grows by a new lot of `reinvest_quantity`
+whose cost is the net amount.
 
-**`stock_split`** — `ratio_from`, `ratio_to`. **No legs.** Quantity scales by
-`ratio_to / ratio_from`; total cost is unchanged, so cost per share moves.
+**`stock_split`** — `symbol`, `ratio_from`, `ratio_to`. **No legs.** Quantity
+scales by `ratio_to / ratio_from`; the total cost of each lot is unchanged,
+so cost per share moves.
 
-**`symbol_change`** — `old_symbol`, `new_symbol`. **No legs.** Re-key the holding.
+**`symbol_change`** — `old_symbol`, `new_symbol`. **No legs.** Re-key the
+holding.
 
 ### Foreign currency
 
-**`fx_deposit`** — `amount_foreign`, `currency`, `market_rate`, `customer_rate`,
-`usd_at_market_rate`, `usd_at_customer_rate`.
+**`fx_deposit`** — `customer_id`, `amount_foreign`, `currency`,
+`market_rate`, `customer_rate`, `usd_at_market_rate`,
+`usd_at_customer_rate`.
 
-Money arrives in another currency and is converted. The customer is credited at
-their rate; the gap between that and the market rate is the firm's spread.
-Crediting the wallet with the market figure overstates what is owed to the
-customer by exactly that spread.
-```
-Dr 1100 usd_at_market_rate     Cr 2010 usd_at_customer_rate
-                               Cr 4100 the difference
-```
+Money arrives in another currency and is converted. The omnibus account
+receives the **market** value. The customer is credited at **their** rate,
+which is worse; the gap is the firm's FX spread, earned now. Crediting the
+customer with the market figure overstates what they are owed by exactly that
+spread.
 
 ### Corrections
 
-**`reversal`** — `reverses_event_id`, plus a free-text `reason` you can ignore.
-Post the exact inverse of the original's legs. Keep both: the audit trail retains the original and its reversal.
+**`reversal`** — `reverses_event_id`, plus a free-text `reason` you can
+ignore. Post the **exact inverse** of the original's legs, and keep both: the
+audit trail retains the original and its reversal.
 
-A reversal must also undo the original's effect on your **lot book**, not just on
-the accounts. A reversed buy whose lot you leave in place will balance perfectly
-and quietly corrupt every subsequent cost basis.
+A reversal must also undo the original's effect on your **lot book**, not
+just on the accounts. A reversed buy whose lot you leave in place will
+balance perfectly and quietly corrupt every subsequent cost basis.
+
 
 ---
 
@@ -548,9 +540,15 @@ strategy.
 
 | Mode | Length | Events | Feedback |
 | --- | --- | --- | --- |
-| `practice` | ~7 min | 800 | **Full.** Every response tells you the correct legs and diffs them against yours. Unlimited reruns |
-| `submission` | ~60 min | 4,000 | **Score shown**, no per-event diffs. 3 attempts, each a fresh dataset |
-| `final` | ~3 h | 12,000 | Score withheld until submissions close. 1 attempt |
+| `practice` | ~20 min | 800 | **Diagnostic.** Every response says whether you were right, whether you balanced, and which accounts you disagree on; the worked examples (deposits, buy fills) return their full legs. Checkpoints score every part and name what diverges. Unlimited reruns |
+| `submission` | ~60 min | 4,000 | **Score shown**, no per-event feedback. 3 attempts, each a fresh dataset |
+| `final` | ~75 min | 6,000 | Score withheld until submissions close. 1 attempt |
+
+The lengths are nominal: your stream is staggered against everyone else's and
+drains its tail after the nominal duration, so budget a few extra minutes and
+let `stream_end` tell you the run is over, not your own clock. `/v1/rules`
+serves these numbers live; if this table and that endpoint ever disagree, the
+endpoint wins.
 
 Practice is the executable specification. If anything here is ambiguous, run
 against practice and believe what it tells you.

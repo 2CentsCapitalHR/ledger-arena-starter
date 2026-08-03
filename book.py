@@ -103,104 +103,126 @@ class Book:
 
     # -- yours --------------------------------------------------------------
     def on_fee_charged(self, p, ev):
-        raise NotImplementedError("Dr 2010 amount / Cr 1100 amount")
+        raise NotImplementedError(
+            "The customer pays the firm's fee from their wallet; the cash "
+            "leaves the omnibus account")
 
     def on_fee_refund(self, p, ev):
         raise NotImplementedError(
-            "Dr 1100 / Cr 2010. The amount is NOT in this payload: look it up "
-            "from the fee_charged event named by refunds_source_id")
+            "Undoes a fee in full. The amount is NOT in this payload: it "
+            "is the amount of the fee_charged event named by "
+            "refunds_source_id. Refunding twice is an error")
 
     def on_interest_credited(self, p, ev):
         raise NotImplementedError(
-            "Dr 1100 gross / Cr 2010 customer_share / Cr 4200 the remainder")
+            "The customer is credited customer_share; the firm keeps the "
+            "remainder of gross_amount as income. Not a pass-through")
 
     def on_transfer_between_customers(self, p, ev):
         raise NotImplementedError(
-            "Dr 2010 (from_customer_id) / Cr 2010 (to_customer_id). Both legs "
-            "land on 2010, so the ACCOUNT nets to zero")
+            "One customer pays another. No external cash moves; only "
+            "WHOSE money it is changes. A per-account book shows nothing "
+            "at all")
 
     def on_fx_deposit(self, p, ev):
         raise NotImplementedError(
-            "Dr 1100 usd_at_market_rate / Cr 2010 usd_at_customer_rate / "
-            "Cr 4100 the difference")
+            "The omnibus account receives the market value; the customer "
+            "is credited at THEIR rate; the gap is the firm's FX spread, "
+            "earned now")
 
     def on_withdrawal_requested(self, p, ev):
-        raise NotImplementedError("Dr 2010 amount / Cr 2300 amount")
+        raise NotImplementedError(
+            "The money left the wallet but not the broker: it is owed as "
+            "a withdrawal in processing, a different obligation from "
+            "wallet money")
 
     def on_withdrawal_settled(self, p, ev):
         raise NotImplementedError(
-            "Dr 2300 / Cr 1100. Look up the amount from the request")
+            "The cash actually leaves. Look the amount up from the "
+            "request")
 
     def on_withdrawal_rejected(self, p, ev):
-        raise NotImplementedError("Dr 2300 / Cr 2010")
+        raise NotImplementedError(
+            "The withdrawal fails; the money is wallet money again. No "
+            "cash ever moved")
 
     def on_order_placed(self, p, ev):
         raise NotImplementedError(
             "No legs. A placement moves no money: it creates a hold of "
-            "quantity * limit_price + est_charges, reported at checkpoints and "
-            "never posted. Holding the principal alone under-reserves on every "
-            "order")
+            "quantity * limit_price + est_charges, reported at "
+            "checkpoints and never posted")
 
     def on_order_partially_filled(self, p, ev):
         return self.on_order_filled(p, ev)
 
     def on_order_filled(self, p, ev):
         raise NotImplementedError(
-            "The fee amounts are NOT in the payload. Derive them from the "
-            "broker tariff in PROTOCOL.md section 4, each rounded to the cent "
-            "independently. Three things here balance when done wrong: the "
-            "regulatory fee is a payable and not revenue; cost is booked gross "
-            "rather than netted off revenue; and the partner is paid on net "
-            "revenue, with no clawback when a trade loses money. Cash does NOT "
-            "move on the trade date")
+            "The fee amounts are NOT in the payload: derive them from the "
+            "tariff in PROTOCOL.md section 4, each rounded to the cent "
+            "independently. A buy is fully worked in section 4; study why "
+            "each leg is what it is, because the sell and everything else "
+            "must be derived by the same reasoning. Cash does NOT move on "
+            "the trade date")
 
     # -- what the firm earns and owes ---------------------------------------
     def on_broker_fees_settled(self, p, ev):
         raise NotImplementedError(
-            "Dr 241x / Cr 1100 for the WHOLE outstanding balance on that "
-            "broker's payable for that customer. The amount is not in the "
-            "payload: it is every cent you have accrued since the last one")
+            "Pay that broker's WHOLE accumulated payable for that "
+            "customer from omnibus cash. The amount is not in the "
+            "payload: it is every cent accrued since the last settlement")
 
     def on_custodian_fees_settled(self, p, ev):
-        raise NotImplementedError("Dr 2420 outstanding / Cr 1100")
+        raise NotImplementedError(
+            "As broker fees, for the custodian's accumulated payable")
 
     def on_reg_fees_remitted(self, p, ev):
-        raise NotImplementedError("Dr 2400 outstanding / Cr 1100")
+        raise NotImplementedError(
+            "As broker fees, for the regulatory fees collected on the "
+            "venue's behalf")
 
     def on_partner_payout(self, p, ev):
-        raise NotImplementedError("Dr 2430 outstanding / Cr 1100")
+        raise NotImplementedError(
+            "As broker fees, for the partner's accumulated share")
 
     def on_trade_settled(self, p, ev):
         raise NotImplementedError(
-            "buy: Dr 2350 / Cr 1100.  sell: Dr 1100 / Cr 1150")
+            "Settlement day: the cash from that fill actually moves, "
+            "discharging the obligation the fill created")
 
     def on_order_cancelled(self, p, ev):
-        raise NotImplementedError("No legs. Release the remaining hold")
+        raise NotImplementedError(
+            "No legs. Release the remaining hold")
 
     def on_order_rejected(self, p, ev):
         return self.on_order_cancelled(p, ev)
 
     def on_dividend_cash(self, p, ev):
         raise NotImplementedError(
-            "Dr 1100 net / Cr 2010 net. Tax is withheld at source, so raise no "
-            "payable")
+            "Only the net ever reaches the firm; tax was withheld at "
+            "source and is owed to nobody. The net is the customer's "
+            "money")
 
     def on_dividend_reinvested(self, p, ev):
         raise NotImplementedError(
-            "Dr 1200 net / Cr 2100 net, and add a lot. Cash is not involved")
+            "The broker reinvests the net directly: cash is never "
+            "involved, and the holding grows by a new lot costing the net "
+            "amount")
 
     def on_stock_split(self, p, ev):
         raise NotImplementedError(
-            "No legs. Quantity scales; total cost does not change")
+            "No legs. Quantity scales by ratio_to/ratio_from; each lot's "
+            "total cost does not change")
 
     def on_symbol_change(self, p, ev):
-        raise NotImplementedError("No legs. Re-key the holding")
+        raise NotImplementedError(
+            "No legs. Re-key the holding")
 
     def on_reversal(self, p, ev):
         raise NotImplementedError(
-            "Post the exact inverse of the original's legs, and undo its effect "
-            "on your LOT BOOK too. A reversed buy whose lot you leave behind "
-            "balances perfectly and corrupts every later cost basis")
+            "Post the exact inverse of the original's legs, and undo its "
+            "effect on your LOT BOOK too. A reversed buy whose lot you "
+            "leave behind balances perfectly and corrupts every later "
+            "cost basis")
 
     # -- reporting ----------------------------------------------------------
     def snapshot(self) -> dict:
