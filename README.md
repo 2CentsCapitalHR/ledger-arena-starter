@@ -38,8 +38,9 @@ not implemented yet (1174 events skipped):
   ...
 ```
 
-Then read **`PROTOCOL.md`**. It is the entire specification: the accounts, all
-twenty event types, every posting rule, and how the scoring works.
+Then read **`PROTOCOL.md`**. It is the entire specification: the accounts, the
+broker tariff, all twenty-three event types, every posting rule, and how the
+scoring works.
 
 ## What is already done for you
 
@@ -58,6 +59,25 @@ hard to find afterwards.
 **Key balances by `(customer, account)`, not by account.** At least one event
 moves money between two customers on the same account. An account-level book
 shows nothing wrong at all, and its trial balance agrees with it.
+
+**The firm has its own money.** Brokerage and custody are revenue, the executing
+broker and the custodian cost us, the regulatory fee is collected for the venue,
+and an introducing partner takes a share of what is left. Those accounts are
+graded as one block: your statement of what the firm earned and owes either ties
+or it does not.
+
+## How long this takes
+
+**Budget 12 to 18 hours**, more if double-entry bookkeeping is new to you. The
+transport is already written, so all of that is the ledger itself.
+
+If you run out of time, cut the four settlement events first (worth about 8
+points), then reversals (another 10), and only then corporate actions, which
+are worth far more than they look: a split you ignore corrupts every position
+after it. `PROTOCOL.md` has the measured table.
+
+Stopping early and writing down what is missing costs you nothing and reads
+better than something half-built.
 
 ## Tiers
 

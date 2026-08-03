@@ -437,6 +437,36 @@ and keeps consuming beats one that crashes and misses a thousand.
 
 ---
 
+## 5b. How long this takes, and what to cut
+
+**Budget 12 to 18 hours** if you are comfortable with double-entry bookkeeping,
+more if you are meeting it for the first time. The transport is done for you in
+the starter kit; all of that time is the ledger.
+
+That is a real number, not a polite one. Reading this document carefully is an
+hour of it. The fee chain and the lot book are most of the rest.
+
+**If you run out of time, cut in this order.** These are measured against the
+reference, not guessed, so you can spend your last hours where they pay:
+
+| If you skip | You score about |
+| --- | --- |
+| the four settlement events | 92 |
+| reversals as well | 82 |
+| corporate actions as well | 64 |
+| everything except cash, orders and FIFO | 51 |
+
+Corporate actions look small and are not: a split or a reinvestment you ignore
+silently corrupts every position and every cost basis after it, which is why
+skipping them costs three times what skipping reversals does.
+
+Stopping early and **writing down what is missing and how you would have done
+it** costs you nothing here and reads far better than something half-built and
+unexplained. We would rather see a correct book that does eight things than a
+confident one that does twelve.
+
+---
+
 ## 6. Scoring
 
 | Component | Weight |
