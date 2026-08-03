@@ -557,7 +557,7 @@ strategy.
 
 | Mode | Length | Events | Feedback |
 | --- | --- | --- | --- |
-| `practice` | ~20 min | 800 | **Diagnostic.** Every response says whether you were right, whether you balanced, and which accounts you disagree on; the worked examples (deposits, buy fills) return their full legs. Checkpoints score every part and name what diverges. Unlimited reruns |
+| `practice` | ~20 min | 800 | **Diagnostic.** Every response says whether you were right, whether you balanced, and which accounts you disagree on; the worked examples (deposits, buy fills) return their full legs. Checkpoints score every part and name what diverges. 12 runs |
 | `submission` | ~60 min | 4,000 | **Score shown**, no per-event feedback. 3 attempts, each a fresh dataset |
 | `final` | ~75 min | 6,000 | Score withheld until submissions close. 1 attempt |
 
