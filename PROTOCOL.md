@@ -171,6 +171,22 @@ here.
 Trial balance values are **debit-positive**: an asset balance is positive, a
 liability balance is negative.
 
+**As-of queries.** Some checkpoint requests carry an extra field:
+
+```json
+{"type": "checkpoint_request",
+ "payload": {"checkpoint_id": "asof0", "respond_within_seconds": 60,
+             "as_of_event_id": "evt_9f2c11a04b3e7712"}}
+```
+
+Answer in exactly the same shape, but describing your book **as it stood once
+you had processed that event, in delivery order, and nothing after it**. If a
+backdated event arrived later, the as-of answer does not include it. Current
+state is not enough to answer these; how you make your history answerable
+(replaying an event log, keeping snapshots) is a design decision this
+assignment deliberately forces, and it is much easier to take before you
+start than after.
+
 ### `GET /v1/me?mode=<mode>` and `GET /v1/leaderboard?mode=<mode>`
 
 Your stats and the standings. In `practice` and `submission` `/v1/me` includes
@@ -425,6 +441,7 @@ All of these are deliberate. None are bugs.
 | **Unknown reference** | A reversal of an event you never received | Record it as rejected, carry on |
 | **Oversell** | A sale larger than the position | Reject it. **Do not** leave lots half-consumed |
 | **Malformed** | A payload that will not parse | Reject it, carry on |
+| **A systematic defect** | The feed contains **at least one systematic defect**: a class of event that is internally well-formed and wrong. We guarantee its existence and tell you nothing else about it | Your book's invariants are how you find it. Events you identify as the defect are bad data: reject them |
 
 An event you correctly reject produces **no legs**. Submit `"legs": []`.
 
