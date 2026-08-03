@@ -144,8 +144,8 @@ liability balance is negative.
 
 ### `GET /v1/me?mode=<mode>` and `GET /v1/leaderboard?mode=<mode>`
 
-Your stats and the standings. In practice mode `/v1/me` includes a full
-breakdown; in the qualifier and the main event it does not.
+Your stats and the standings. In `practice` and `submission` `/v1/me` includes
+a full breakdown; in `final` it does not.
 
 ### `GET /v1/rules`
 
@@ -343,8 +343,10 @@ nothing outstanding is an error.
 | `reg_fees_remitted` | `customer_id` | Dr 2400 outstanding, Cr 1100 |
 | `partner_payout` | `customer_id` | Dr 2430 outstanding, Cr 1100 |
 
-Realised profit and loss is `(principal - commission - reg) - cost`. Never post
-it directly; it is the residual.
+Realised profit and loss on a sell is
+`(principal - brokerage - custody - reg) - cost`. **Never post it directly**: it
+is the residual of the legs above, and a book that posts it as well double
+counts every gain.
 
 **`order_cancelled`**, **`order_rejected`** — `order_id`. **No legs.** Release
 the remaining hold.
@@ -539,10 +541,18 @@ the same events, so comparing answers with someone else will actively mislead yo
 1. Consume the stream and print event types. Do not post anything yet.
 2. Implement deposits and fees. Watch the trial balance stay at zero.
 3. Implement the order lifecycle. Remember that placements and cancellations
-   produce no legs.
-4. Implement FIFO cost relief on sells. This is the largest single source of lost
-   marks.
-5. Implement reversals, including the lot-book effect.
-6. Make ingestion idempotent, then reconnect mid-run and confirm nothing changes.
-7. Implement checkpoints.
-8. Only then worry about batching and latency.
+   produce no legs, and that the hold covers the charges as well as the
+   principal.
+4. Implement the fee chain from the tariff: revenue, cost, the regulatory
+   payable and the partner share. Get the rounding right before you move on;
+   everything downstream inherits it.
+5. Implement FIFO cost relief on sells. **This is the largest single source of
+   lost marks**, worth more than everything below it combined.
+6. Implement checkpoints, including the routes of open orders.
+7. Make ingestion idempotent, then reconnect mid-run and confirm nothing
+   changes.
+8. Implement corporate actions. They look small and are not: an ignored split
+   corrupts every position after it.
+9. Implement reversals, including the lot-book effect.
+10. Implement the four settlement events.
+11. Only then worry about batching and latency.
