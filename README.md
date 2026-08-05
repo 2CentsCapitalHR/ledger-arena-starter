@@ -94,13 +94,21 @@ better than something half-built.
 
 | Tier | Attempts | Score | What it is for |
 | --- | --- | --- | --- |
-| `practice` | unlimited | shown, with the correct legs on every event | develop here |
+| `practice` | 12 | shown, with diagnostics on every event | develop here |
 | `submission` | 3 | shown | scored; tuning against it is expected |
 | `final` | 1 | withheld | this is what ranks you |
 
-Practice returns the expected legs on every response. Use it hard: it is the
-executable version of the specification, and anything ambiguous in the document
-is settled by running against it.
+**`/v1/rules` is the authority on these numbers.** If this table and that
+endpoint ever disagree, the endpoint wins: check it before you plan around a
+figure here.
+
+Practice tells you, on every event, whether you were right, whether your legs
+balanced, and which accounts you disagree on. Use it deliberately rather than
+as a compiler: twelve runs is plenty for an honest debugging loop, but it is
+not infinite, and each one costs twenty minutes of wall clock.
+
+Each attempt draws a fresh dataset, so a retry is a new problem rather than a
+retake of one you have already seen scored.
 
 Each attempt draws a fresh dataset, so a retry is a new problem rather than a
 retake of one you have already seen scored.
