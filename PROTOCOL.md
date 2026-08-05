@@ -17,6 +17,24 @@ costs you very little. There is nothing to stay awake for.
 >    events over ~75 minutes. The table previously said 3 h / 12,000, which
 >    was never what the server ran.
 
+> **Clarifications, 2026-08-04** (also announced in Discord; none change scoring):
+> 1. Reconnecting to `/v1/stream` on `practice` after your last run finished
+>    now opens the next one automatically. It used to require an undocumented
+>    `&new=true` and, without it, a generic reconnect loop would retry the
+>    same request forever. `submission` and `final` are unchanged and still
+>    require the explicit flag, since an attempt there is scarce.
+> 2. `GET /v1/me` now also returns `latest_run`: your most recent attempt's
+>    own score and breakdown, whenever it differs from `run_id`/`score` above
+>    (which have always been your **best** run, so a weaker retry never looks
+>    like a regression). Use `latest_run` to see the attempt you are actually
+>    iterating on.
+> 3. **Practice attempts raised from 12 to 15, for everyone.** The starter
+>    kit's README advertised "unlimited" practice runs while this document
+>    said 12. That contradiction was ours, and some of you planned against
+>    the wrong number, so the cap is now 15 for every candidate rather than
+>    reset for anyone who asked. Practice ranks nobody: only the final tier
+>    does, and that is unchanged at one attempt.
+
 ---
 
 ## 1. What you need
@@ -91,6 +109,13 @@ Base URL and your API key are issued to you. Authenticate every request with
 
 Server-Sent Events. Each message is one event. Reconnect with the next offset
 you have not processed. **Always send `from`**; the server may rewind you.
+
+Once your run on a tier finishes, reconnecting the same way opens the *next*
+one on `practice` automatically. On `submission` and `final`, where an
+attempt is scarce, it does not: add **`&new=true`** to start one on purpose.
+A reconnect there without it gets a `409` telling you the last run finished,
+so a dropped connection can never spend an attempt you did not choose to
+spend. The starter kit's `client.py` handles this for you.
 
 ```
 event: order_filled
@@ -563,7 +588,7 @@ strategy.
 
 | Mode | Length | Events | Feedback |
 | --- | --- | --- | --- |
-| `practice` | ~20 min | 800 | **Diagnostic.** Every response says whether you were right, whether you balanced, and which accounts you disagree on; the worked examples (deposits, buy fills) return their full legs. Checkpoints score every part and name what diverges. 12 runs |
+| `practice` | ~20 min | 800 | **Diagnostic.** Every response says whether you were right, whether you balanced, and which accounts you disagree on; the worked examples (deposits, buy fills) return their full legs. Checkpoints score every part and name what diverges. 15 runs |
 | `submission` | ~60 min | 4,000 | **Score shown**, no per-event feedback. 3 attempts, each a fresh dataset |
 | `final` | ~75 min | 6,000 | Score withheld until submissions close. 1 attempt |
 
