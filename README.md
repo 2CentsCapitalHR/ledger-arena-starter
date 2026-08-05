@@ -110,9 +110,6 @@ not infinite, and each one costs twenty minutes of wall clock.
 Each attempt draws a fresh dataset, so a retry is a new problem rather than a
 retake of one you have already seen scored.
 
-Each attempt draws a fresh dataset, so a retry is a new problem rather than a
-retake of one you have already seen scored.
-
 ## Rules
 
 - **One address, one candidate.** Your key is your identity.
